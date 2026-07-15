@@ -2,6 +2,8 @@
 
 A prize "wheel" that spins, lands on a random item, and switches your [Veadotube](https://veado.tube/) avatar to the matching state. Runs directly in OBS via a browser source.
 
+Download by clicking Releases on the right.
+
 |                     Default Template Wheel                     |                  My Personal Wheel                  |
 | :--------------------------------------------------------: | :----------------------------------------------------------: |
 | ![Default Wheel Template](assets/template-wheel-demo.webp) | ![My Personal Wheel](assets/adrimark-wheel-demo.webp) |
