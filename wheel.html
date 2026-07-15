@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Veadotube Random State Wheel</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --rarity-color: #FFFFFF;
+
+            /* Customize The Wheel 🎃︎ */ 
+            --wheel-bg-color: rgba(0, 0, 0, 0.5);   /* Background */
+            --box-line-color: #333333;              /* Dividers */
+            --middle-line-color: red;                /* Winning Center Line */
+            --box-outline-color: transparent;        /* Outline Box */
+        }
+
+        body { width: 100vw; height: 100vh; overflow: hidden; margin: 0; display: flex; align-items: center; justify-content: center; background: transparent; font-family: 'Space Grotesk', sans-serif; transition: opacity 0.6s ease; }
+        body.hide-ui { opacity: 0; pointer-events: none; }
+
+        #wheel-screen { position: absolute; transition: opacity 0.5s ease; opacity: 1; z-index: 10; }
+        .spinner-container { width: 600px; height: 150px; border: 4px solid var(--box-outline-color); position: relative; overflow: hidden; background: var(--wheel-bg-color); }
+        .spinner-track { display: flex; height: 100%; transition: transform 6.5s cubic-bezier(0.1, 0.9, 0.25, 1); will-change: transform; }
+        .item { width: 150px; height: 100%; flex-shrink: 0; box-sizing: border-box; border-right: 2px solid var(--box-line-color); background-size: cover; background-position: center; }
+        .pointer { position: absolute; top: 0; bottom: 0; left: 50%; width: 4px; background: var(--middle-line-color); transform: translateX(-50%); z-index: 30; }
+
+        #wheel-overlay { position: absolute; top: 50%; left: 50%; background-repeat: no-repeat; background-position: center; background-size: contain; pointer-events: none; z-index: 40; }
+
+        #winner-screen { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.5s ease; z-index: 20; }
+
+        .winner-glow { position: absolute; width: 450px; height: 450px; background: radial-gradient(circle, var(--rarity-color) 0%, transparent 70%); animation: pulseImage 2s infinite; z-index: 20; opacity: 0.4; }
+
+        #winner-image { width: 300px; height: 300px; background-size: contain; background-position: center; background-repeat: no-repeat; transform: scale(0.5); transition: transform 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275); z-index: 21; filter: drop-shadow(0px 0px 30px rgba(0,0,0,0.8)); }
+
+        #winner-text {
+            color: var(--rarity-color);
+            font-size: 48px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            text-shadow: 3px 3px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0px 0px 25px var(--rarity-color), 0px 15px 30px rgba(0,0,0,0.9);
+            margin-top: -75px;
+            z-index: 25;
+            opacity: 0;
+            transform: translateY(50px) scale(0.5);
+            transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .show-winner #wheel-screen { opacity: 0; }
+        .show-winner #winner-screen { opacity: 1; pointer-events: all; }
+        .show-winner #winner-image { transform: scale(1); filter: drop-shadow(0px 0px 30px var(--rarity-color)); }
+
+        .show-winner #winner-text {
+            transform: translateY(0) scale(1);
+            opacity: 1;
+            animation: textPulse 2s infinite alternate ease-in-out;
+            animation-delay: 0.6s;
+        }
+
+        @keyframes pulseImage {
+            0% { transform: scale(0.9); opacity: 0.3; }
+            50% { transform: scale(1.1); opacity: 0.6; }
+            100% { transform: scale(0.9); opacity: 0.3; }
+        }
+
+        @keyframes textPulse {
+            0% { filter: brightness(1); text-shadow: 3px 3px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0px 0px 25px var(--rarity-color), 0px 15px 30px rgba(0,0,0,0.9); }
+            100% { filter: brightness(1.2); text-shadow: 3px 3px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0px 0px 50px #FFF, 0px 15px 30px rgba(0,0,0,0.9); }
+        }
+    </style>
+</head>
+<body>
+    <div id="wheel-screen">
+        <div class="spinner-container">
+            <div class="pointer"></div>
+            <div class="spinner-track" id="track"></div>
+        </div>
+        <div id="wheel-overlay"></div>
+    </div>
+
+    <div id="winner-screen">
+        <div class="winner-glow"></div>
+        <div id="winner-image"></div>
+        <div id="winner-text"></div>
+    </div>
+
+    <script>
+        // Settings 🎃︎
+
+        // Wheel
+        const NODE_ID = "your-node-id-here"; // The ID of your State Events Node (Right-Click the node to see this)
+        const ITEM_WIDTH = 150;             // Must match the .item width in the CSS above
+        const CONTAINER_WIDTH = 600;        // Must match the .spinner-container width in the CSS above
+        const TOTAL_ITEMS = 80;             // How many items scroll past before the wheel stops
+        const LANDING_GAP = 5;              // Winning item sits this many items before the end of the track
+        const SPIN_JITTER_PX = 60;          // Max random offset so the winning line doesn't stop in the same place everytime
+        const DEFAULT_STATE_ID = "None";    // State to revert to
+        const HIDE_DELAY_SECONDS = 5;       // How long the winner stays on screen before the UI disappears
+        const REVERT_DELAY_SECONDS = 600;   // How long the won state stays active before the avatar reverts
+        const DUPLICATE_WIN_COOLDOWN = 2;   // How many spins until a winner can be won again
+
+        // Overlay Image 🎃︎
+        // The image path must be in relation to where this file (wheel.html) is saved. For instance, if the image is called "Cat.png"
+        // and inside the same folder as wheel.html, then you will just put "Cat.png".
+        // If wheel.html is next to a folder which holds the overlay, it will be "folder/Cat.png"
+        const OVERLAY_IMAGE = ""; // "" to disable
+        const OVERLAY_WIDTH = 830;     // Width in px, Height follows the aspect ratio
+        const OVERLAY_OFFSET_X = 3.5;  // Shift Horizontally
+        const OVERLAY_OFFSET_Y = 10;   // Shift Vertically
+
+        // Sounds 🎃︎
+        // Same rules for path as Overlay Image. Leave as "" to use the built-in sound.
+        const START_SOUND = "";       // Plays when the wheel starts
+        const DEFAULT_WIN_SOUND = ""; // Plays on win if the item doesn't have a custom sound
+
+        // Items / States 🎃︎
+        // Same rules for path as Overlay Image.
+
+        // State ID must match the Veadotube state name exactly.
+        // The name field is what will appear on the screen when that state wins.
+        // Weight is based on the total of all items. If you have 4 states each with weight 1, then the chance of any state winning is 1/4.
+        // If you change one item to have weight 2, then that item has a 2/5 chance of winning.
+        // Sound is optional. You can leave it as "" for the default sound set above, or you can set a path to a custom sound.
+
+        const STATE_IMAGE_OFFSET_X = 5;  // Shift Horizontally
+        const STATE_IMAGE_OFFSET_Y = 25;  // Shift Vertically
+
+        const outcomes = [
+            { img: "Item1.png", stateId: "State1", name: "Item One", weight: 1, color: "#B0C3D9", sound: "" },
+            { img: "Item2.png", stateId: "State2", name: "Item Two", weight: 1, color: "#4B69FF", sound: "" }
+        ];
+
+        // Boring Wheel Code! 🎃︎
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const track = document.getElementById('track');
+
+        function playCustomSound(path) {
+            const audio = new Audio(path);
+            audio.play().catch(err => console.warn('Could not play custom sound:', path, err));
+        }
+
+        function playStartSound() {
+            if (START_SOUND) {
+                playCustomSound(START_SOUND);
+                return;
+            }
+
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.1);
+            osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.4);
+
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.4);
+        }
+
+        function playTick() {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            osc.type = 'square';
+            const randomPitch = 1200 + (Math.random() * 300);
+            osc.frequency.setValueAtTime(randomPitch, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.02);
+
+            gainNode.gain.setValueAtTime(0.03, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.02);
+
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.02);
+        }
+
+        function playWinSound(winningItem) {
+            const customSound = (winningItem && winningItem.sound) || DEFAULT_WIN_SOUND;
+            if (customSound) {
+                playCustomSound(customSound);
+                return;
+            }
+
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+
+            // You can edit this to change the default win sound
+            // Pick a happy chord!
+            const frequencies = [523.25, 659.25, 783.99]; // Default is C Major Chord
+
+            frequencies.forEach((freq, index) => {
+                const osc = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+
+                osc.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+
+                osc.type = 'triangle';
+                osc.frequency.value = freq;
+
+                const startTime = audioCtx.currentTime + (index * 0.04);
+
+                gainNode.gain.setValueAtTime(0, startTime);
+                gainNode.gain.linearRampToValueAtTime(0.08, startTime + 0.1);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + 2.0);
+
+                osc.start(startTime);
+                osc.stop(startTime + 2.0);
+            });
+        }
+
+        function getRandomItem() {
+            const totalWeight = outcomes.reduce((sum, item) => sum + item.weight, 0);
+            let random = Math.random() * totalWeight;
+            for (let i = 0; i < outcomes.length; i++) {
+                if (random < outcomes[i].weight) {
+                    return outcomes[i];
+                }
+                random -= outcomes[i].weight;
+            }
+            return outcomes[0];
+        }
+
+        const RECENT_WINS_STORAGE_KEY = `avatarWheelRecentWins_${NODE_ID}`;
+
+        function getRecentWinnerStateIds() {
+            try {
+                const raw = localStorage.getItem(RECENT_WINS_STORAGE_KEY);
+                return raw ? JSON.parse(raw) : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function addRecentWinnerStateId(stateId) {
+            try {
+                const recent = getRecentWinnerStateIds();
+                recent.unshift(stateId);
+                localStorage.setItem(RECENT_WINS_STORAGE_KEY, JSON.stringify(recent.slice(0, DUPLICATE_WIN_COOLDOWN)));
+            } catch (e) {
+                console.warn('Could not persist recent wins:', e);
+            }
+        }
+
+        const REVERT_AT_STORAGE_KEY = `avatarWheelRevertAt_${NODE_ID}`;
+
+        function getPendingRevertAt() {
+            try {
+                const value = localStorage.getItem(REVERT_AT_STORAGE_KEY);
+                return value ? Number(value) : null;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function setPendingRevertAt(timestamp) {
+            try {
+                localStorage.setItem(REVERT_AT_STORAGE_KEY, String(timestamp));
+            } catch (e) {
+                console.warn('Could not persist revert time:', e);
+            }
+        }
+
+        function clearPendingRevertAt() {
+            try {
+                localStorage.removeItem(REVERT_AT_STORAGE_KEY);
+            } catch (e) {
+                console.warn('Could not clear revert time:', e);
+            }
+        }
+
+        function performRevert() {
+            sendVeadotubeState(connectVeadotube(), DEFAULT_STATE_ID);
+            clearPendingRevertAt();
+        }
+
+        function scheduleRevert(delayMs) {
+            setPendingRevertAt(Date.now() + delayMs);
+            setTimeout(performRevert, delayMs);
+        }
+
+        function resolvePendingRevert() {
+            const revertAt = getPendingRevertAt();
+            if (revertAt === null) return;
+
+            const remaining = revertAt - Date.now();
+            if (remaining <= 0) {
+                performRevert();
+            } else {
+                setTimeout(performRevert, remaining);
+            }
+        }
+
+        function getWinningItem() {
+            const recentWinnerIds = getRecentWinnerStateIds();
+
+            if (DUPLICATE_WIN_COOLDOWN <= 0 || recentWinnerIds.length === 0 || outcomes.length <= 1) {
+                return getRandomItem();
+            }
+
+            let item;
+            let attempts = 0;
+            do {
+                item = getRandomItem();
+                attempts++;
+            } while (recentWinnerIds.includes(item.stateId) && attempts < 100);
+
+            return item;
+        }
+
+        function buildTrack() {
+            const winningItem = getWinningItem();
+            const targetElementIndex = TOTAL_ITEMS - LANDING_GAP;
+
+            let lastOutcome = null;
+
+            for (let i = 0; i < TOTAL_ITEMS; i++) {
+                const el = document.createElement('div');
+                el.className = 'item';
+
+                let outcome;
+                if (i === targetElementIndex) {
+                    outcome = winningItem;
+                } else {
+                    const avoidWinner = (i === targetElementIndex - 1);
+                    do {
+                        outcome = getRandomItem();
+                    } while (
+                        outcomes.length > 1 &&
+                        (outcome === lastOutcome || (avoidWinner && outcome === winningItem))
+                    );
+                }
+
+                lastOutcome = outcome;
+                el.style.backgroundImage = `url('${outcome.img}')`;
+                el.style.backgroundPosition = `calc(50% + ${STATE_IMAGE_OFFSET_X}px) calc(50% + ${STATE_IMAGE_OFFSET_Y}px)`;
+                track.appendChild(el);
+            }
+
+            return { targetElementIndex, winningItem };
+        }
+
+        function spin() {
+            playStartSound();
+
+            const { targetElementIndex, winningItem } = buildTrack();
+            const offset = (targetElementIndex * ITEM_WIDTH) - (CONTAINER_WIDTH / 2) + (ITEM_WIDTH / 2);
+
+            const randomVisualOffset = Math.floor(Math.random() * (SPIN_JITTER_PX * 2)) - SPIN_JITTER_PX;
+            const finalOffset = offset + randomVisualOffset;
+
+            track.getBoundingClientRect();
+            track.style.transform = `translateX(-${finalOffset}px)`;
+
+            let isSpinning = true;
+            let lastItemIndex = -1;
+
+            function checkPosition() {
+                const style = window.getComputedStyle(track);
+                const matrix = new DOMMatrix(style.transform);
+                const currentX = Math.abs(matrix.m41);
+
+                const currentIndex = Math.floor((currentX + (CONTAINER_WIDTH / 2)) / ITEM_WIDTH);
+
+                if (currentIndex > lastItemIndex && lastItemIndex !== -1) {
+                    playTick();
+                }
+                lastItemIndex = currentIndex;
+
+                if (isSpinning) {
+                    requestAnimationFrame(checkPosition);
+                }
+            }
+            requestAnimationFrame(checkPosition);
+
+            track.addEventListener('transitionend', () => {
+                isSpinning = false;
+
+                const veadoSocket = connectVeadotube();
+
+                setTimeout(() => {
+                    playWinSound(winningItem);
+                    sendVeadotubeState(veadoSocket, winningItem.stateId);
+                    addRecentWinnerStateId(winningItem.stateId);
+
+                    document.documentElement.style.setProperty('--rarity-color', winningItem.color);
+
+                    const winnerImageDiv = document.getElementById('winner-image');
+                    const winnerTextDiv = document.getElementById('winner-text');
+
+                    winnerImageDiv.style.backgroundImage = `url('${winningItem.img}')`;
+                    winnerTextDiv.innerText = winningItem.name;
+
+                    document.body.classList.add('show-winner');
+
+                    setTimeout(() => {
+                        document.body.classList.add('hide-ui');
+                    }, HIDE_DELAY_SECONDS * 1000);
+
+                    scheduleRevert(REVERT_DELAY_SECONDS * 1000);
+                }, 1000);
+
+            }, { once: true });
+        }
+
+        function connectVeadotube() {
+            const ws = new WebSocket('ws://127.0.0.1:2424?n=AvatarWheel');
+            ws.onerror = (err) => console.error('Veadotube WebSocket error:', err);
+            ws.onclose = (event) => {
+                if (!event.wasClean) {
+                    console.warn(`Veadotube WebSocket closed unexpectedly (code ${event.code})`);
+                }
+            };
+            return ws;
+        }
+
+        function sendNodePayload(ws, payload) {
+            const send = () => {
+                const message = {
+                    event: "payload",
+                    type: "stateEvents",
+                    id: NODE_ID,
+                    payload
+                };
+                ws.send(`nodes:${JSON.stringify(message)}`);
+
+                setTimeout(() => ws.close(), 500);
+            };
+
+            if (ws.readyState === WebSocket.OPEN) {
+                send();
+            } else {
+                ws.addEventListener('open', send, { once: true });
+            }
+        }
+
+        function sendVeadotubeState(ws, stateId) {
+            sendNodePayload(ws, { event: "set", state: stateId });
+        }
+
+        function initOverlay() {
+            const overlay = document.getElementById('wheel-overlay');
+            if (!OVERLAY_IMAGE) {
+                overlay.style.display = 'none';
+                return;
+            }
+            const img = new Image();
+            img.onload = () => {
+                const scale = OVERLAY_WIDTH / img.naturalWidth;
+                overlay.style.width = `${OVERLAY_WIDTH}px`;
+                overlay.style.height = `${img.naturalHeight * scale}px`;
+                overlay.style.backgroundImage = `url('${OVERLAY_IMAGE}')`;
+                overlay.style.transform = `translate(calc(-50% + ${OVERLAY_OFFSET_X}px), calc(-50% + ${OVERLAY_OFFSET_Y}px))`;
+            };
+            img.src = OVERLAY_IMAGE;
+        }
+
+        window.onload = () => {
+            resolvePendingRevert();
+            spin();
+            initOverlay();
+        };
+    </script>
+</body>
+</html>
+
+<!-- Veadotube Random State Wheel by AdriMark -->
+<!-- Provided Under The GPLv3 License
+
+     Want to support me? Consider Donating:
+     https://shop.markcraft.org/pages/donate
+-->
